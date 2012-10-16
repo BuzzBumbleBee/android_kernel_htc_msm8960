@@ -1,4 +1,3 @@
-source "drivers/video/msm/sii9234/Kconfig"
 source "drivers/video/msm/vidc/Kconfig"
 
 config FB_MSM
@@ -302,6 +301,12 @@ config FB_MSM_OVERLAY0_WRITEBACK
         bool "MDP overlay0 write back mode enable"
 	---help---
 	  Support for MDP4 OVERLAY0 write back mode
+
+config FB_MSM_OVERLAY1_WRITEBACK
+        depends on FB_MSM_OVERLAY
+        bool "MDP overlay1 write back mode enable"
+        ---help---
+          Support for MDP4 OVERLAY1 write back mode
 
 config FB_MSM_WRITEBACK_MSM_PANEL
 	depends on FB_MSM_OVERLAY

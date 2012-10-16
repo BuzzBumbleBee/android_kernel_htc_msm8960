@@ -396,6 +396,7 @@ struct msm_panel_common_pdata {
 	u32 ov0_wb_size;  /* overlay0 writeback size */
 	u32 ov1_wb_size;  /* overlay1 writeback size */
 	u32 mem_hid;
+        char cont_splash_enabled;
 	int (*writeback_offset)(void);
 	int (*mdp_color_enhance)(void);
 	int (*mdp_gamma)(void);
@@ -463,6 +464,8 @@ struct mipi_dsi_panel_platform_data {
 	struct mipi_dsi_phy_ctrl *phy_ctrl_settings;
 };
 
+#define PANEL_NAME_MAX_LEN 50
+
 struct msm_fb_platform_data {
 	int (*detect_client)(const char *name);
 	int mddi_prescan;
@@ -470,6 +473,8 @@ struct msm_fb_platform_data {
 	int blt_mode;
 	uint32_t width;
 	uint32_t height;
+        char prim_panel_name[PANEL_NAME_MAX_LEN];
+        char ext_panel_name[PANEL_NAME_MAX_LEN];
 };
 #define HDMI_VFRMT_640x480p60_4_3 0
 #define HDMI_VFRMT_720x480p60_16_9 2

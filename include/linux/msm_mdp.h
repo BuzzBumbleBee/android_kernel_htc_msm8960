@@ -195,6 +195,10 @@ struct mdp_ccs {
 	uint16_t bv[MDP_BV_SIZE];	/* 1x3 bias vector */
 };
 
+#define MDP_CSC_FLAG_ENABLE     0x1
+#define MDP_CSC_FLAG_YUV_IN     0x2
+#define MDP_CSC_FLAG_YUV_OUT    0x4
+
 struct mdp_csc {
 	int id;
 	uint32_t csc_mv[9];

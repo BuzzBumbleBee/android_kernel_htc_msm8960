@@ -211,12 +211,10 @@ static void res_trk_pmem_unmap(struct ddl_buf_addr *addr)
 		if (addr->physical_base_addr) {
 			ion_unmap_kernel(resource_context.res_ion_client,
 					addr->alloc_handle);
-			if (!res_trk_check_for_sec_session()) {
-				ion_unmap_iommu(resource_context.res_ion_client,
+			ion_unmap_iommu(resource_context.res_ion_client,
 				addr->alloc_handle,
 				VIDEO_DOMAIN,
 				VIDEO_FIRMWARE_POOL);
-			}
 			addr->virtual_base_addr = NULL;
 			addr->physical_base_addr = NULL;
 		}
@@ -346,7 +344,7 @@ static u32 res_trk_sel_clk_rate(unsigned long hclk_rate)
 	return status;
 }
 
-u32 res_trk_get_clk_rate(unsigned long *phclk_rate)
+static u32 res_trk_get_clk_rate(unsigned long *phclk_rate)
 {
 	u32 status = true;
 	mutex_lock(&resource_context.lock);
@@ -646,9 +644,8 @@ void res_trk_init(struct device *device, u32 irq)
 			VIDC_FW_SIZE, DDL_KILO_BYTE(128))) {
 			pr_err("%s() Firmware buffer allocation failed",
 				   __func__);
-			if (!res_trk_check_for_sec_session())
-				memset(&resource_context.firmware_addr, 0,
-				sizeof(resource_context.firmware_addr));
+			memset(&resource_context.firmware_addr, 0,
+			   sizeof(resource_context.firmware_addr));
 		}
 	}
 }
@@ -673,15 +670,6 @@ u32 res_trk_get_firmware_addr(struct ddl_buf_addr *firm_addr)
 	memcpy(firm_addr, &resource_context.firmware_addr,
 		sizeof(struct ddl_buf_addr));
 	return 0;
-}
-
-int res_trk_check_for_sec_session(void)
-{
-	int rc;
-	mutex_lock(&resource_context.secure_lock);
-	rc = resource_context.secure_session;
-	mutex_unlock(&resource_context.secure_lock);
-	return rc;
 }
 
 int res_trk_get_mem_type(void)
@@ -728,10 +716,6 @@ struct ion_client *res_trk_get_ion_client(void)
 
 u32 res_trk_get_disable_dmx(void){
 	return resource_context.disable_dmx;
-}
-
-u32 res_trk_get_min_dpb_count(void){
-	return resource_context.vidc_platform_data->cont_mode_dpb_count;
 }
 
 void res_trk_set_mem_type(enum ddl_mem_area mem_type)
@@ -798,37 +782,43 @@ int res_trk_disable_iommu_clocks(void)
 	return 0;
 }
 
+int res_trk_check_for_sec_session()
+{
+	int rc;
+	mutex_lock(&resource_context.secure_lock);
+	rc = (resource_context.secure_session) ? -EBUSY : 0;
+	mutex_unlock(&resource_context.secure_lock);
+	return rc;
+}
+
 void res_trk_secure_unset(void)
 {
 	mutex_lock(&resource_context.secure_lock);
-	resource_context.secure_session--;
+	resource_context.secure_session = 0;
 	mutex_unlock(&resource_context.secure_lock);
 }
 
 void res_trk_secure_set(void)
 {
 	mutex_lock(&resource_context.secure_lock);
-	resource_context.secure_session++;
+	resource_context.secure_session = 1;
 	mutex_unlock(&resource_context.secure_lock);
 }
 
 int res_trk_open_secure_session()
 {
 	int rc;
+	mutex_lock(&resource_context.secure_lock);
 
-	if (res_trk_check_for_sec_session() == 1) {
-		mutex_lock(&resource_context.secure_lock);
-		pr_err("Securing...\n");
-		rc = res_trk_enable_iommu_clocks();
-		if (rc) {
-			pr_err("IOMMU clock enabled failed while open");
-			goto error_open;
-		}
-		msm_ion_secure_heap(ION_HEAP(resource_context.memtype));
-		msm_ion_secure_heap(ION_HEAP(resource_context.cmd_mem_type));
-		res_trk_disable_iommu_clocks();
-		mutex_unlock(&resource_context.secure_lock);
+	rc = res_trk_enable_iommu_clocks();
+	if (rc) {
+		pr_err("IOMMU clock enabled failed while open");
+		goto error_open;
 	}
+	msm_ion_secure_heap(ION_HEAP(resource_context.memtype));
+	msm_ion_secure_heap(ION_HEAP(resource_context.cmd_mem_type));
+	res_trk_disable_iommu_clocks();
+	mutex_unlock(&resource_context.secure_lock);
 	return 0;
 error_open:
 	mutex_unlock(&resource_context.secure_lock);
@@ -838,55 +828,19 @@ error_open:
 int res_trk_close_secure_session()
 {
 	int rc;
-	if (res_trk_check_for_sec_session() == 1) {
-		pr_err("Unsecuring....\n");
-		mutex_lock(&resource_context.secure_lock);
-		rc = res_trk_enable_iommu_clocks();
-		if (rc) {
-			pr_err("IOMMU clock enabled failed while close");
-			goto error_close;
-		}
-		msm_ion_unsecure_heap(ION_HEAP(resource_context.memtype));
-		msm_ion_unsecure_heap(ION_HEAP(resource_context.cmd_mem_type));
-		res_trk_disable_iommu_clocks();
-		mutex_unlock(&resource_context.secure_lock);
+	mutex_lock(&resource_context.secure_lock);
+	rc = res_trk_enable_iommu_clocks();
+	if (rc) {
+		pr_err("IOMMU clock enabled failed while close");
+		goto error_close;
 	}
+	msm_ion_unsecure_heap(ION_HEAP(resource_context.memtype));
+	msm_ion_unsecure_heap(ION_HEAP(resource_context.cmd_mem_type));
+	res_trk_disable_iommu_clocks();
+	resource_context.secure_session = 0;
+	mutex_unlock(&resource_context.secure_lock);
 	return 0;
 error_close:
 	mutex_unlock(&resource_context.secure_lock);
 	return rc;
-}
-
-u32 get_res_trk_perf_level(enum vcd_perf_level perf_level)
-{
-	u32 res_trk_perf_level;
-	switch (perf_level) {
-	case VCD_PERF_LEVEL0:
-		res_trk_perf_level = RESTRK_1080P_VGA_PERF_LEVEL;
-		break;
-	case VCD_PERF_LEVEL1:
-		res_trk_perf_level = RESTRK_1080P_720P_PERF_LEVEL;
-		break;
-	case VCD_PERF_LEVEL2:
-		res_trk_perf_level = RESTRK_1080P_MAX_PERF_LEVEL;
-		break;
-	default:
-		VCD_MSG_ERROR("Invalid perf level: %d\n", perf_level);
-		res_trk_perf_level = -EINVAL;
-	}
-	return res_trk_perf_level;
-}
-
-u32 res_trk_estimate_perf_level(u32 pn_perf_lvl)
-{
-	VCDRES_MSG_MED("%s(), req_perf_lvl = %d", __func__, pn_perf_lvl);
-	if ((pn_perf_lvl >= RESTRK_1080P_VGA_PERF_LEVEL) &&
-		(pn_perf_lvl < RESTRK_1080P_720P_PERF_LEVEL)) {
-		return RESTRK_1080P_720P_PERF_LEVEL;
-	} else if ((pn_perf_lvl >= RESTRK_1080P_720P_PERF_LEVEL) &&
-			(pn_perf_lvl < RESTRK_1080P_MAX_PERF_LEVEL)) {
-		return RESTRK_1080P_MAX_PERF_LEVEL;
-	} else {
-		return pn_perf_lvl;
-	}
 }
