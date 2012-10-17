@@ -568,9 +568,11 @@ static int msm_fb_resume_sub(struct msm_fb_data_type *mfd)
 
 	if (mfd->suspend.panel_power_on) {
 
-		MSM_FB_INFO("msm_fb_resume: attempting resume\n");
+		MSM_FB_INFO("msm_fb_resume: attempting resume a\n");
 
-		pdata->display_on(mfd);
+                down(&mfd->sem);
+                pdata->display_on(mfd);
+                up(&mfd->sem);
 
 		ret =
 		     msm_fb_blank_sub(FB_BLANK_UNBLANK, mfd->fbi,
