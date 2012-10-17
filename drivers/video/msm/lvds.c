@@ -181,6 +181,8 @@ static void lvds_init(struct msm_fb_data_type *mfd)
 			lvds_intf = 0x0001078c;
 			lvds_phy_cfg0 = BIT(6);
 		}
+	} else {
+		BUG();
 	}
 
 	/* MDP_LVDSPHY_CFG0 */
@@ -206,7 +208,7 @@ static int lvds_off(struct platform_device *pdev)
 	ret = panel_next_off(pdev);
 
 	if (lvds_clk)
-		clk_disable(lvds_clk);
+		clk_disable_unprepare(lvds_clk);
 
 	if (lvds_pdata && lvds_pdata->lcdc_power_save)
 		lvds_pdata->lcdc_power_save(0);
@@ -247,7 +249,7 @@ static int lvds_on(struct platform_device *pdev)
 				__func__, mfd->fbi->var.pixclock);
 			goto out;
 		}
-		clk_enable(lvds_clk);
+		clk_prepare_enable(lvds_clk);
 	}
 
 	if (lvds_pdata && lvds_pdata->lcdc_power_save)
@@ -272,6 +274,12 @@ static int lvds_probe(struct platform_device *pdev)
 
 	if (pdev->id == 0) {
 		lvds_pdata = pdev->dev.platform_data;
+
+		lvds_clk = clk_get(&pdev->dev, "lvds_clk");
+		if (IS_ERR_OR_NULL(lvds_clk)) {
+			pr_err("Couldnt find lvds_clk\n");
+			lvds_clk = NULL;
+		}
 		return 0;
 	}
 
@@ -369,12 +377,6 @@ static int lvds_register_driver(void)
 
 static int __init lvds_driver_init(void)
 {
-	lvds_clk = clk_get(NULL, "lvds_clk");
-	if (IS_ERR_OR_NULL(lvds_clk)) {
-		pr_err("Couldnt find lvds_clk\n");
-		lvds_clk = NULL;
-	}
-
 	return lvds_register_driver();
 }
 

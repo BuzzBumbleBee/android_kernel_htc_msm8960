@@ -711,7 +711,6 @@ static void ville_lcd_shutdown(struct platform_device *pdev)
 	mipi_dsi_panel_power(0);
 }
 
-
 static struct platform_driver this_driver = {
 	.probe  = ville_lcd_probe,
 	.shutdown = ville_lcd_shutdown,

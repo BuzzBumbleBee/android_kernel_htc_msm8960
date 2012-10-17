@@ -644,8 +644,9 @@ void res_trk_init(struct device *device, u32 irq)
 			VIDC_FW_SIZE, DDL_KILO_BYTE(128))) {
 			pr_err("%s() Firmware buffer allocation failed",
 				   __func__);
-			memset(&resource_context.firmware_addr, 0,
-			   sizeof(resource_context.firmware_addr));
+			if (!res_trk_check_for_sec_session())
+				memset(&resource_context.firmware_addr, 0,
+				sizeof(resource_context.firmware_addr));
 		}
 	}
 }
@@ -843,4 +844,24 @@ int res_trk_close_secure_session()
 error_close:
 	mutex_unlock(&resource_context.secure_lock);
 	return rc;
+}
+
+u32 get_res_trk_perf_level(enum vcd_perf_level perf_level)
+{
+	u32 res_trk_perf_level;
+	switch (perf_level) {
+	case VCD_PERF_LEVEL0:
+		res_trk_perf_level = RESTRK_1080P_VGA_PERF_LEVEL;
+		break;
+	case VCD_PERF_LEVEL1:
+		res_trk_perf_level = RESTRK_1080P_720P_PERF_LEVEL;
+		break;
+	case VCD_PERF_LEVEL2:
+		res_trk_perf_level = RESTRK_1080P_MAX_PERF_LEVEL;
+		break;
+	default:
+		VCD_MSG_ERROR("Invalid perf level: %d\n", perf_level);
+		res_trk_perf_level = -EINVAL;
+	}
+	return res_trk_perf_level;
 }

@@ -350,6 +350,7 @@ static void mdp4_overlay_dtv_alloc_pipe(struct msm_fb_data_type *mfd,
 	}
 
 	mdp4_mixer_stage_up(pipe);
+	mdp4_overlay_reg_flush(pipe, 1);
 
 	dtv_pipe = pipe; /* keep it */
 }
@@ -369,6 +370,10 @@ int mdp4_overlay_dtv_set(struct msm_fb_data_type *mfd,
 		mdp4_overlay_dtv_alloc_pipe(mfd, OVERLAY_TYPE_RGB);
 	if (dtv_pipe == NULL)
 		return -ENODEV;
+
+	mdp4_init_writeback_buf(mfd, MDP4_MIXER1);
+	dtv_pipe->blt_addr = 0;
+
 	return mdp4_dtv_start(mfd);
 }
 
@@ -484,6 +489,7 @@ static void mdp4_overlay_dtv_wait4_ov_done(struct msm_fb_data_type *mfd,
 void mdp4_overlay_dtv_start(void)
 {
 	if (!dtv_enabled) {
+		mdp4_iommu_attach();
 		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 		/* enable DTV block */
 		MDP_OUTP(MDP_BASE + DTV_BASE, 1);
@@ -560,7 +566,7 @@ void mdp4_dtv_set_black_screen(void)
 	*/
 	temp_src_format = inpdw(rgb_base + 0x0050);
 	MDP_OUTP(rgb_base + 0x0050, temp_src_format | BIT(22));
-	mdp4_mixer_stage_up(dtv_pipe);
+	mdp4_overlay_reg_flush(dtv_pipe, 0);
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 }
 

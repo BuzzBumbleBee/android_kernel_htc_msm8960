@@ -127,13 +127,20 @@ enum {
 #define INTR_EXTERNAL_INTF_UDERRUN	BIT(10)
 #define INTR_PRIMARY_READ_PTR		BIT(11)
 #define INTR_DMA_P_HISTOGRAM		BIT(17)
+#define INTR_DMA_S_HISTOGRAM		BIT(26)
 #define INTR_OVERLAY2_DONE		BIT(30)
 
 #ifdef CONFIG_FB_MSM_OVERLAY
-#define MDP4_ANY_INTR_MASK	(INTR_DMA_P_HISTOGRAM)
+#define MDP4_ANY_INTR_MASK	(INTR_DMA_P_HISTOGRAM | \
+				INTR_DMA_S_HISTOGRAM | \
+				INTR_VG1_HISTOGRAM | \
+				INTR_VG2_HISTOGRAM)
 #else
 #define MDP4_ANY_INTR_MASK	(INTR_DMA_P_DONE| \
-				INTR_DMA_P_HISTOGRAM)
+				INTR_DMA_P_HISTOGRAM | \
+				INTR_DMA_S_HISTOGRAM | \
+				INTR_VG1_HISTOGRAM | \
+				INTR_VG2_HISTOGRAM)
 #endif
 
 enum {
@@ -460,6 +467,14 @@ static inline void mdp4_overlay_dtv_wait4vsync(void)
 {
     /* empty */
 }
+static inline void mdp4_dtv_overlay_blt_start(struct msm_fb_data_type *mfd)
+{
+	return;
+}
+static inline void mdp4_dtv_overlay_blt_stop(struct msm_fb_data_type *mfd)
+{
+	return;
+}
 #endif
 
 void mdp4_dtv_set_black_screen(void);
@@ -747,4 +762,12 @@ void mdp4_free_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num);
 
 int mdp4_igc_lut_config(struct mdp_igc_lut_data *cfg);
 void mdp4_iommu_unmap(struct mdp4_overlay_pipe *pipe);
+void mdp4_iommu_attach(void);
+int mdp4_v4l2_overlay_set(struct fb_info *info, struct mdp_overlay *req,
+		struct mdp4_overlay_pipe **ppipe);
+void mdp4_v4l2_overlay_clear(struct mdp4_overlay_pipe *pipe);
+int mdp4_v4l2_overlay_play(struct fb_info *info, struct mdp4_overlay_pipe *pipe,
+	unsigned long srcp0_addr, unsigned long srcp1_addr,
+	unsigned long srcp2_addr);
+
 #endif /* MDP_H */

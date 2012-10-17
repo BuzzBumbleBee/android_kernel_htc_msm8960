@@ -358,6 +358,9 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 {
 	uint32 isr, mask, panel;
 	struct mdp_dma_data *dma;
+	struct mdp_hist_mgmt *mgmt = NULL;
+	char *base_addr;
+	int i, ret;
 
 	mdp_is_in_isr = TRUE;
 
@@ -379,10 +382,17 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 		/* When underun occurs mdp clear the histogram registers
 		that are set before in hw_init so restore them back so
 		that histogram works.*/
-		MDP_OUTP(MDP_BASE + 0x95010, 1);
-		outpdw(MDP_BASE + 0x9501c, INTR_HIST_DONE);
-		mdp_is_hist_valid = FALSE;
-		__mdp_histogram_reset();
+		for (i = 0; i < MDP_HIST_MGMT_MAX; i++) {
+			mgmt = mdp_hist_mgmt_array[i];
+			if (!mgmt)
+				continue;
+			base_addr = MDP_BASE + mgmt->base;
+			MDP_OUTP(base_addr + 0x010, 1);
+			outpdw(base_addr + 0x01c, INTR_HIST_DONE |
+						INTR_HIST_RESET_SEQ_DONE);
+			mgmt->mdp_is_hist_valid = FALSE;
+			__mdp_histogram_reset(mgmt);
+		}
 	}
 
 	if (isr & INTR_EXTERNAL_INTF_UDERRUN)
@@ -556,24 +566,27 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 	}
 	if (isr & INTR_DMA_P_HISTOGRAM) {
 		mdp4_stat.intr_histogram++;
-		isr = inpdw(MDP_DMA_P_HIST_INTR_STATUS);
-		mask = inpdw(MDP_DMA_P_HIST_INTR_ENABLE);
-		outpdw(MDP_DMA_P_HIST_INTR_CLEAR, isr);
-		mb();
-		isr &= mask;
-		if (isr & INTR_HIST_RESET_SEQ_DONE)
-			__mdp_histogram_kickoff();
-
-		if (isr & INTR_HIST_DONE) {
-			if (waitqueue_active(&mdp_hist_comp.wait)) {
-				if (!queue_work(mdp_hist_wq,
-						&mdp_histogram_worker)) {
-					pr_err("%s - can't queue hist_read\n",
-							__func__);
-				}
-			} else
-				__mdp_histogram_reset();
-		}
+		ret = mdp_histogram_block2mgmt(MDP_BLOCK_DMA_P, &mgmt);
+		if (!ret)
+			mdp_histogram_handle_isr(mgmt);
+	}
+	if (isr & INTR_DMA_S_HISTOGRAM) {
+		mdp4_stat.intr_histogram++;
+		ret = mdp_histogram_block2mgmt(MDP_BLOCK_DMA_S, &mgmt);
+		if (!ret)
+			mdp_histogram_handle_isr(mgmt);
+	}
+	if (isr & INTR_VG1_HISTOGRAM) {
+		mdp4_stat.intr_histogram++;
+		ret = mdp_histogram_block2mgmt(MDP_BLOCK_VG_1, &mgmt);
+		if (!ret)
+			mdp_histogram_handle_isr(mgmt);
+	}
+	if (isr & INTR_VG2_HISTOGRAM) {
+		mdp4_stat.intr_histogram++;
+		ret = mdp_histogram_block2mgmt(MDP_BLOCK_VG_2, &mgmt);
+		if (!ret)
+			mdp_histogram_handle_isr(mgmt);
 	}
 
 out:
@@ -592,7 +605,7 @@ static uint32 vg_qseed_table0[] = {
 };
 
 static uint32 vg_qseed_table1[] = {
-	0x76543210, 0xfedcba98
+	0x00000000, 0x20000000,
 };
 
 static uint32 vg_qseed_table2[] = {
@@ -2509,6 +2522,7 @@ u32 mdp4_allocate_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num)
 {
 	struct mdp_buf_type *buf;
 	ion_phys_addr_t	addr;
+	size_t buffer_size;
 	unsigned long len;
 
 	if (mix_num == MDP4_MIXER0)
@@ -2524,10 +2538,13 @@ u32 mdp4_allocate_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num)
 		return -EINVAL;
 	}
 
+	buffer_size = roundup(mfd->panel_info.xres * \
+		mfd->panel_info.yres * 3 * 2, SZ_4K);
+
 	if (!IS_ERR_OR_NULL(mfd->iclient)) {
 		pr_info("%s:%d ion based allocation mfd->mem_hid 0x%x\n",
 			__func__, __LINE__, mfd->mem_hid);
-		buf->ihdl = ion_alloc(mfd->iclient, buf->size, SZ_4K,
+		buf->ihdl = ion_alloc(mfd->iclient, buffer_size, SZ_4K,
 			mfd->mem_hid);
 		if (!IS_ERR_OR_NULL(buf->ihdl)) {
 			if (ion_map_iommu(mfd->iclient, buf->ihdl,
@@ -2542,12 +2559,12 @@ u32 mdp4_allocate_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num)
 			return -ENOMEM;
 		}
 	} else {
-		addr = allocate_contiguous_memory_nomap(buf->size,
+		addr = allocate_contiguous_memory_nomap(buffer_size,
 			mfd->mem_hid, 4);
 	}
 	if (addr) {
 		pr_info("allocating %d bytes at %x for mdp writeback\n",
-			buf->size, (u32) addr);
+			buffer_size, (u32) addr);
 		buf->phys_addr = addr;
 		return 0;
 	} else {
@@ -2814,10 +2831,12 @@ int mdp4_pcc_cfg(struct mdp_pcc_cfg_data *cfg_ptr)
 
 	if (0x8 & cfg_ptr->ops)
 		outpdw(mdp_dma_op_mode,
-			(inpdw(mdp_dma_op_mode)|((0x8&cfg_ptr->ops)<<10)));
+			((inpdw(mdp_dma_op_mode) & ~(0x1<<10)) |
+						((0x8 & cfg_ptr->ops)<<10)));
 
 	outpdw(mdp_cfg_offset,
-			(inpdw(mdp_cfg_offset)|((cfg_ptr->ops&0x1)<<29)));
+			((inpdw(mdp_cfg_offset) & ~(0x1<<29)) |
+						((cfg_ptr->ops & 0x1)<<29)));
 
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
@@ -3003,8 +3022,9 @@ int mdp4_argc_cfg(struct mdp_pgc_lut_data *pgc_ptr)
 
 		if (!ret) {
 			mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-			outpdw(pgc_enable_offset, (inpdw(pgc_enable_offset) |
-				((0x1 & pgc_ptr->flags) << lshift_bits)));
+			outpdw(pgc_enable_offset, (inpdw(pgc_enable_offset) &
+							~(0x1<<lshift_bits)) |
+				((0x1 & pgc_ptr->flags) << lshift_bits));
 			mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF,
 									FALSE);
 		}
