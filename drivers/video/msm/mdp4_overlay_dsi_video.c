@@ -453,6 +453,8 @@ static void mdp4_overlay_dsi_video_wait4event(struct msm_fb_data_type *mfd,
 {
 	unsigned long flag;
 	unsigned int data;
+	long timeout = 0;
+	int retry_count = 0;
 
 	data = inpdw(MDP_BASE + DSI_VIDEO_BASE);
 	data &= 0x01;
@@ -467,7 +469,31 @@ static void mdp4_overlay_dsi_video_wait4event(struct msm_fb_data_type *mfd,
 	outp32(MDP_INTR_ENABLE, mdp_intr_mask);
 	mdp_enable_irq(MDP_DMA2_TERM);  /* enable intr */
 	spin_unlock_irqrestore(&mdp_spin_lock, flag);
-	wait_for_completion(&dsi_video_comp);
+	wait_for_completion_timeout(&dsi_video_comp, HZ/5);
+
+	while (!timeout && retry_count++ < 15) {
+		rmb();
+		if (mfd->dma->waiting == FALSE) {
+			pr_info("###%s(%d)timeout but dma not busy now\n", __func__, __LINE__);
+			break;
+		} else {
+			pr_err("%s(%d)timeout but dma still busy\n", __func__, __LINE__);
+			pr_err("MDP_DISPLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x18));
+			pr_err("MDP_INTR_STATUS:%x\n", inpdw(MDP_INTR_STATUS));
+			pr_err("MDP_INTR_ENABLE:%x\n", inpdw(MDP_INTR_ENABLE));
+			pr_err("MDP_OVERLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x10000));
+
+			timeout = wait_for_completion_timeout(&dsi_video_comp, HZ/5);
+		}
+	}
+
+	if (retry_count >= 15) {
+		pr_err("###mdp busy wait retry timed out, mfd->dma->waiting:%d\n", mfd->dma->waiting);
+		spin_lock_irqsave(&mdp_spin_lock, flag);
+		mfd->dma->waiting = FALSE;
+		spin_unlock_irqrestore(&mdp_spin_lock, flag);
+	}
+
 	mdp_disable_irq(MDP_DMA2_TERM);
 }
 

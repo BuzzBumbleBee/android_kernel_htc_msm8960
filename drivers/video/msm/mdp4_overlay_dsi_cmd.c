@@ -550,6 +550,8 @@ void mdp4_dsi_cmd_dma_busy_wait(struct msm_fb_data_type *mfd)
 {
 	unsigned long flag;
 	int need_wait = 0;
+	int retry_count = 0;
+	long timeout = 0;
 
 
 
@@ -584,7 +586,55 @@ void mdp4_dsi_cmd_dma_busy_wait(struct msm_fb_data_type *mfd)
 		/* wait until DMA finishes the current job */
 		pr_debug("%s: pending pid=%d dsi_clk_on=%d\n",
 				__func__, current->pid, mipi_dsi_clk_on);
-		wait_for_completion(&mfd->dma->comp);
+
+		wait_for_completion_timeout(&mfd->dma->comp, HZ/10);
+
+		while (!timeout && retry_count++ < 15) {
+			rmb();
+			if (mfd->dma->busy == FALSE) {
+				pr_err("%s(%d)timeout but dma not busy now, cnt:%d\n", __func__, __LINE__, busy_wait_cnt);
+				break;
+			} else {
+				pr_err("%s(%d)timeout but dma still busy\n", __func__, __LINE__);
+				pr_err("###busy_wait_cnt:%d need_wait:%d pending pid=%d dsi_clk_on=%d\n", busy_wait_cnt, need_wait, current->pid, mipi_dsi_clk_on);
+				pr_err("MDP_DISPLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x18));
+				pr_err("MDP_INTR_STATUS:%x\n", inpdw(MDP_INTR_STATUS));
+				pr_err("MDP_INTR_ENABLE:%x\n", inpdw(MDP_INTR_ENABLE));
+				pr_err("MDP_LAYERMIXER_IN_CFG:%x\n", inpdw(msm_mdp_base + 0x10100));
+				pr_err("MDP_OVERLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x10000));
+				pr_err("MDP_OVERLAYPROC0_CFG:%x\n", inpdw(msm_mdp_base + 0x10004));
+				pr_err("MDP_OVERLAYPROC1_CFG:%x\n", inpdw(msm_mdp_base + 0x18004));
+				pr_err("RGB1(1):%x %x %x %x\n", inpdw(msm_mdp_base + 0x40000), inpdw(msm_mdp_base + 0x40004), inpdw(msm_mdp_base + 0x40008), inpdw(msm_mdp_base + 0x4000C));
+				pr_err("RGB1(2):%x %x %x %x\n", inpdw(msm_mdp_base + 0x40010), inpdw(msm_mdp_base + 0x40014), inpdw(msm_mdp_base + 0x40018), inpdw(msm_mdp_base + 0x40040));
+				pr_err("RGB1(3):%x %x %x %x\n", inpdw(msm_mdp_base + 0x40050), inpdw(msm_mdp_base + 0x40054), inpdw(msm_mdp_base + 0x40058), inpdw(msm_mdp_base + 0x4005C));
+				pr_err("RGB1(4):%x %x %x %x\n", inpdw(msm_mdp_base + 0x40060), inpdw(msm_mdp_base + 0x41000), inpdw(msm_mdp_base + 0x41004), inpdw(msm_mdp_base + 0x41008));
+				pr_err("RGB2(1):%x %x %x %x\n", inpdw(msm_mdp_base + 0x50000), inpdw(msm_mdp_base + 0x50004), inpdw(msm_mdp_base + 0x50008), inpdw(msm_mdp_base + 0x5000C));
+				pr_err("RGB2(2):%x %x %x %x\n", inpdw(msm_mdp_base + 0x50010), inpdw(msm_mdp_base + 0x50014), inpdw(msm_mdp_base + 0x50018), inpdw(msm_mdp_base + 0x50040));
+				pr_err("RGB2(3):%x %x %x %x\n", inpdw(msm_mdp_base + 0x50050), inpdw(msm_mdp_base + 0x50054), inpdw(msm_mdp_base + 0x50058), inpdw(msm_mdp_base + 0x5005C));
+				pr_err("RGB2(4):%x %x %x %x\n", inpdw(msm_mdp_base + 0x50060), inpdw(msm_mdp_base + 0x51000), inpdw(msm_mdp_base + 0x51004), inpdw(msm_mdp_base + 0x51008));
+				pr_err("VG1 (1):%x %x %x %x\n", inpdw(msm_mdp_base + 0x20000), inpdw(msm_mdp_base + 0x20004), inpdw(msm_mdp_base + 0x20008), inpdw(msm_mdp_base + 0x2000C));
+				pr_err("VG1 (2):%x %x %x %x\n", inpdw(msm_mdp_base + 0x20010), inpdw(msm_mdp_base + 0x20014), inpdw(msm_mdp_base + 0x20018), inpdw(msm_mdp_base + 0x20040));
+				pr_err("VG1 (3):%x %x %x %x\n", inpdw(msm_mdp_base + 0x20050), inpdw(msm_mdp_base + 0x20054), inpdw(msm_mdp_base + 0x20058), inpdw(msm_mdp_base + 0x2005C));
+				pr_err("VG1 (4):%x %x %x %x\n", inpdw(msm_mdp_base + 0x20060), inpdw(msm_mdp_base + 0x21000), inpdw(msm_mdp_base + 0x21004), inpdw(msm_mdp_base + 0x21008));
+				pr_err("VG2 (1):%x %x %x %x\n", inpdw(msm_mdp_base + 0x30000), inpdw(msm_mdp_base + 0x30004), inpdw(msm_mdp_base + 0x30008), inpdw(msm_mdp_base + 0x3000C));
+				pr_err("VG2 (2):%x %x %x %x\n", inpdw(msm_mdp_base + 0x30010), inpdw(msm_mdp_base + 0x30014), inpdw(msm_mdp_base + 0x30018), inpdw(msm_mdp_base + 0x30040));
+				pr_err("VG2 (3):%x %x %x %x\n", inpdw(msm_mdp_base + 0x30050), inpdw(msm_mdp_base + 0x30054), inpdw(msm_mdp_base + 0x30058), inpdw(msm_mdp_base + 0x3005C));
+				pr_err("VG2 (4):%x %x %x %x\n", inpdw(msm_mdp_base + 0x30060), inpdw(msm_mdp_base + 0x31000), inpdw(msm_mdp_base + 0x31004), inpdw(msm_mdp_base + 0x31008));
+
+				timeout = wait_for_completion_timeout(&mfd->dma->comp, HZ/5);
+			}
+		}
+
+		if (retry_count >= 15) {
+			pr_err("###mdp busy wait retry timed out, mfd->dma->busy:%d busy_wait_cnt:%d\n",  mfd->dma->busy, busy_wait_cnt);
+			spin_lock_irqsave(&mdp_spin_lock, flag);
+			if(busy_wait_cnt > 0)
+				--busy_wait_cnt;
+			mfd->dma->busy = FALSE;
+			spin_unlock_irqrestore(&mdp_spin_lock, flag);
+		}
+
+
 	}
 	pr_debug("%s: done pid=%d dsi_clk_on=%d\n",
 			 __func__, current->pid, mipi_dsi_clk_on);

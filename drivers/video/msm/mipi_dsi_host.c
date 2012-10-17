@@ -988,6 +988,8 @@ void mipi_dsi_mdp_busy_wait(struct msm_fb_data_type *mfd)
 {
 	unsigned long flag;
 	int need_wait = 0;
+	int retry_count = 0;
+	long timeout = 0;
 
 	pr_debug("%s: start pid=%d\n",
 				__func__, current->pid);
@@ -1002,7 +1004,27 @@ void mipi_dsi_mdp_busy_wait(struct msm_fb_data_type *mfd)
 		/* wait until DMA finishes the current job */
 		pr_debug("%s: pending pid=%d\n",
 				__func__, current->pid);
-		wait_for_completion(&dsi_mdp_comp);
+		wait_for_completion_timeout(&dsi_mdp_comp, HZ/5);
+
+		while (!timeout && retry_count++ < 15) {
+			rmb();
+			if(dsi_mdp_busy == FALSE) {
+				pr_err("%s(%d)timeout but dsi not busy now\n", __func__, __LINE__);
+				break;
+			} else {
+				pr_err("%s(%d)timeout but dsi still busy\n", __func__, __LINE__);
+				pr_err("###need_wait:%d pending pid=%d dsi_clk_on=%d\n", need_wait, current->pid, mipi_dsi_clk_on);
+				pr_err("RGB1:%x, RGB2:%x, VG1:%x, VG2:%x\n", inpdw(msm_mdp_base + 0x41000), inpdw(msm_mdp_base + 0x51000), inpdw(msm_mdp_base + 0x21000), inpdw(msm_mdp_base + 0x31000));
+				timeout = wait_for_completion_timeout(&dsi_mdp_comp, HZ/5);
+			}
+		}
+
+		if (retry_count >= 15) {
+			pr_err("###mdp busy wait retry timed out\n");
+			spin_lock_irqsave(&mdp_spin_lock, flag);
+			dsi_mdp_busy = FALSE;
+			spin_unlock_irqrestore(&mdp_spin_lock, flag);
+		}
 	}
 	pr_debug("%s: done pid=%d\n",
 				__func__, current->pid);
@@ -1107,6 +1129,15 @@ int mipi_dsi_cmds_tx(struct msm_fb_data_type *mfd,
 	int i, video_mode;
 	unsigned long flag;
 
+
+	if (mfd != 0 && mfd->panel_info.type == MIPI_CMD_PANEL) {
+#ifndef CONFIG_FB_MSM_MDP303
+		mdp4_dsi_cmd_dma_busy_wait(mfd);
+#else
+		mdp3_dsi_cmd_dma_busy_wait(mfd);
+#endif
+	}
+
 	/* turn on cmd mode
 	* for video mode, do not send cmds more than
 	* one pixel line, since it only transmit it
@@ -1123,13 +1154,15 @@ int mipi_dsi_cmds_tx(struct msm_fb_data_type *mfd,
 		 * even it is video mode panel.
 		 */
 		/* make sure mdp dma is not txing pixel data */
-		if (mfd->panel_info.type == MIPI_CMD_PANEL) {
+
+/**		if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 #ifndef CONFIG_FB_MSM_MDP303
 			mdp4_dsi_cmd_dma_busy_wait(mfd);
 #else
 			mdp3_dsi_cmd_dma_busy_wait(mfd);
 #endif
 		}
+**/
 	}
 
 	spin_lock_irqsave(&dsi_mdp_lock, flag);
@@ -1336,7 +1369,7 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 	MIPI_OUTP(MIPI_DSI_BASE + 0x08c, 0x01);	/* trigger */
 	wmb();
 
-	wait_for_completion(&dsi_dma_comp);
+	wait_for_completion_timeout(&dsi_dma_comp, HZ/10);
 
 	dma_unmap_single(&dsi_dev, tp->dmap, len, DMA_TO_DEVICE);
 	tp->dmap = 0;

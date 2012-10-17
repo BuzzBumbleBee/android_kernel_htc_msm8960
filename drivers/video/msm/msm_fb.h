@@ -148,6 +148,8 @@ struct msm_fb_data_type {
 	__u32 var_xres;
 	__u32 var_yres;
 	__u32 var_pixclock;
+	uint32_t width;
+	uint32_t height;
 
 #ifdef MSM_FB_ENABLE_DBGFS
 	struct dentry *sub_dir;

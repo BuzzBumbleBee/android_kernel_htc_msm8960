@@ -67,6 +67,7 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	int ret = 0;
 	struct msm_fb_data_type *mfd;
 	struct msm_panel_info *pinfo;
+	uint32_t vsync_gpio_sleep_cfg = GPIO_CFG(0, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA);
 
 	mfd = platform_get_drvdata(pdev);
 	pinfo = &mfd->panel_info;
@@ -135,6 +136,9 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	mipi_dsi_unprepare_clocks();
 	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
 		mipi_dsi_pdata->dsi_power_save(0);
+
+	/* Config gpio for gpio table sleep mode */
+	gpio_tlmm_config(vsync_gpio_sleep_cfg, GPIO_CFG_ENABLE);
 
 	if (mdp_rev >= MDP_REV_41)
 		mutex_unlock(&mfd->dma->ov_mutex);
