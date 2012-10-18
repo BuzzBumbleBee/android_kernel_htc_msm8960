@@ -570,6 +570,9 @@ static int msm_fb_resume_sub(struct msm_fb_data_type *mfd)
 		ret =
 		     msm_fb_blank_sub(FB_BLANK_UNBLANK, mfd->fbi,
 				      mfd->op_enable);
+
+		pdata->display_on(mfd);
+
 		if (ret)
 			MSM_FB_INFO("msm_fb_resume: can't turn on display!\n");
 	} else {

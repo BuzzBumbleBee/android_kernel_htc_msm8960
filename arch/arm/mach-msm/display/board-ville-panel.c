@@ -584,7 +584,10 @@ static int ville_lcd_on(struct platform_device *pdev)
 
 static void ville_display_on(struct msm_fb_data_type *mfd)
 {
+	printk(KERN_INFO "%s ++\n", __func__);
 	mutex_lock(&mfd->dma->ov_mutex);
+
+
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 		mdp4_dsi_cmd_dma_busy_wait(mfd);
@@ -608,6 +611,7 @@ static void ville_display_on(struct msm_fb_data_type *mfd)
 		PR_DISP_INFO("%s acl enable", __func__);
 	}
 	mutex_unlock(&mfd->dma->ov_mutex);
+	printk(KERN_INFO "%s --\n", __func__);
 }
 
 static int ville_lcd_off(struct platform_device *pdev)
