@@ -2261,6 +2261,7 @@ static void elite_self_refresh_switch(int on)
 
 static void elite_display_on(struct msm_fb_data_type *mfd)
 {
+	printk(KERN_INFO "%s ++\n", __func__);
 	mutex_lock(&mfd->dma->ov_mutex);
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
@@ -2279,6 +2280,7 @@ static void elite_display_on(struct msm_fb_data_type *mfd)
 			ARRAY_SIZE(sharp_display_on_cmds));
 
 	mutex_unlock(&mfd->dma->ov_mutex);
+	printk(KERN_INFO "%s --\n", __func__);
 }
 
 static void mipi_dsi_set_backlight(struct msm_fb_data_type *mfd)
