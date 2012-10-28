@@ -177,6 +177,9 @@ uint32_t mdp_block2base(uint32_t block)
 	case MDP_BLOCK_OVERLAY_1:
 		base = 0x18000;
 		break;
+	case MDP_BLOCK_OVERLAY_2:
+		base = (mdp_rev >= MDP_REV_44) ? 0x88000 : 0;
+		break;
 	default:
 		break;
 	}
@@ -656,6 +659,7 @@ static int mdp_hist_init_mgmt(struct mdp_hist_mgmt *mgmt, uint32_t block)
 		goto error_extra;
 
 	INIT_WORK(&mgmt->mdp_histogram_worker, mdp_hist_read_work);
+	mgmt->hist = NULL;
 
 	mdp_hist_mgmt_array[index] = mgmt;
 	return 0;
@@ -682,7 +686,8 @@ static int mdp_histogram_init(void)
 {
 	struct mdp_hist_mgmt *temp;
 	int i, ret;
-	mdp_hist_wq = alloc_workqueue("mdp_hist_wq", WQ_UNBOUND, 0);
+	mdp_hist_wq = alloc_workqueue("mdp_hist_wq",
+					WQ_NON_REENTRANT | WQ_UNBOUND, 0);
 
 	for (i = 0; i < MDP_HIST_MGMT_MAX; i++)
 		mdp_hist_mgmt_array[i] = NULL;
@@ -894,6 +899,7 @@ int mdp_histogram_start(struct mdp_histogram_start_req *req)
 	mgmt->frame_cnt = req->frame_cnt;
 	mgmt->bit_mask = req->bit_mask;
 	mgmt->num_bins = req->num_bins;
+	mgmt->hist = NULL;
 
 	ret = mdp_histogram_enable(mgmt);
 
@@ -1077,8 +1083,11 @@ static void mdp_hist_read_work(struct work_struct *data)
 		goto error;
 	}
 
-	/* if read was triggered by an underrun, don't wake up readers*/
-	if (mgmt->mdp_is_hist_valid && mgmt->mdp_is_hist_init) {
+	/*
+	 * if read was triggered by an underrun or failed copying,
+	 * don't wake up readers
+	 */
+	if (!ret && mgmt->mdp_is_hist_valid && mgmt->mdp_is_hist_init) {
 		mgmt->hist = NULL;
 		complete(&mgmt->mdp_hist_comp);
 	}
@@ -1174,6 +1183,11 @@ static int mdp_do_histogram(struct fb_info *info,
 		goto error_lock;
 	}
 
+	if (mgmt->hist != NULL) {
+		pr_err("%s; histogram attempted to be read twice\n", __func__);
+		ret = -EPERM;
+		goto error_lock;
+	}
 	mgmt->hist = hist;
 	mutex_unlock(&mgmt->mdp_hist_mutex);
 
@@ -1559,7 +1573,8 @@ void mdp_histogram_handle_isr(struct mdp_hist_mgmt *mgmt)
 		__mdp_histogram_kickoff(mgmt);
 
 	if (isr & INTR_HIST_DONE) {
-		if (waitqueue_active(&mgmt->mdp_hist_comp.wait)) {
+		if ((waitqueue_active(&mgmt->mdp_hist_comp.wait))
+			 && (mgmt->hist != NULL)) {
 			if (!queue_work(mdp_hist_wq,
 						&mgmt->mdp_histogram_worker)) {
 				pr_err("%s %d- can't queue hist_read\n",
@@ -1737,7 +1752,6 @@ static void mdp_drv_init(void)
 	spin_lock_init(&mdp_spin_lock);
 	mdp_dma_wq = create_singlethread_workqueue("mdp_dma_wq");
 	mdp_vsync_wq = create_singlethread_workqueue("mdp_vsync_wq");
-	mdp_hist_wq = create_singlethread_workqueue("mdp_hist_wq");
 	mdp_pipe_ctrl_wq = create_singlethread_workqueue("mdp_pipe_ctrl_wq");
 	INIT_DELAYED_WORK(&mdp_pipe_ctrl_worker,
 			  mdp_pipe_ctrl_workqueue_handler);

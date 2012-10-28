@@ -48,12 +48,6 @@ enum {
 	OVERLAY_PERF_LEVEL4
 };
 
-enum mdp4_overlay_status {
-	MDP4_OVERLAY_TYPE_UNSET,
-	MDP4_OVERLAY_TYPE_SET,
-	MDP4_OVERLAY_TYPE_MAX
-};
-
 typedef int (*cmd_fxn_t)(struct platform_device *pdev);
 
 enum {		/* display */
@@ -237,6 +231,9 @@ enum {
 #define MDP4_OP_SCALE_ALPHA_BILINEAR	(1 << 2)
 #define MDP4_OP_SCALEY_EN	BIT(1)
 #define MDP4_OP_SCALEX_EN	BIT(0)
+
+#define MDP4_REV40_UP_SCALING_MAX (8)
+#define MDP4_REV41_OR_LATER_UP_SCALING_MAX (20)
 
 #define MDP4_PIPE_PER_MIXER	2
 
@@ -513,6 +510,7 @@ void mdp4_mixer_blend_setup(struct mdp4_overlay_pipe *pipe);
 struct mdp4_overlay_pipe *mdp4_overlay_stage_pipe(int mixer, int stage);
 void mdp4_mixer_stage_up(struct mdp4_overlay_pipe *pipe);
 void mdp4_mixer_stage_down(struct mdp4_overlay_pipe *pipe);
+void mdp4_mixer_pipe_cleanup(int mixer);
 int mdp4_mixer_stage_can_run(struct mdp4_overlay_pipe *pipe);
 void mdp4_overlayproc_cfg(struct mdp4_overlay_pipe *pipe);
 void mdp4_mddi_overlay(struct msm_fb_data_type *mfd);
@@ -537,7 +535,7 @@ void mdp4_overlay0_done_mddi(struct mdp_dma_data *dma);
 void mdp4_dma_s_done_mddi(void);
 void mdp4_dma_p_done_mddi(void);
 void mdp4_dma_p_done_dsi(struct mdp_dma_data *dma);
-void mdp4_dma_p_done_dsi_video(void);
+void mdp4_dma_p_done_dsi_video(struct mdp_dma_data *dma);
 void mdp4_dma_p_done_lcdc(void);
 void mdp4_overlay1_done_dtv(void);
 void mdp4_overlay1_done_atv(void);
@@ -723,8 +721,6 @@ void mdp4_overlay_resource_release(void);
 void mdp4_overlay_dsi_video_wait4vsync(struct msm_fb_data_type *mfd);
 void mdp4_primary_vsync_dsi_video(void);
 uint32_t mdp4_ss_table_value(int8_t param, int8_t index);
-void mdp4_overlay_status_write(enum mdp4_overlay_status type, bool val);
-bool mdp4_overlay_status_read(enum mdp4_overlay_status type);
 void mdp4_overlay_ctrl_db_reset(void);
 
 int mdp4_overlay_writeback_on(struct platform_device *pdev);
@@ -763,6 +759,7 @@ void mdp4_free_writeback_buf(struct msm_fb_data_type *mfd, u32 mix_num);
 int mdp4_igc_lut_config(struct mdp_igc_lut_data *cfg);
 void mdp4_iommu_unmap(struct mdp4_overlay_pipe *pipe);
 void mdp4_iommu_attach(void);
+void mdp4_iommu_detach(void);
 int mdp4_v4l2_overlay_set(struct fb_info *info, struct mdp_overlay *req,
 		struct mdp4_overlay_pipe **ppipe);
 void mdp4_v4l2_overlay_clear(struct mdp4_overlay_pipe *pipe);

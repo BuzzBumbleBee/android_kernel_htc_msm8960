@@ -45,6 +45,7 @@
 #define MSM_ROTATOR_START			(MSM_ROTATOR_BASE+0x0030)
 #define MSM_ROTATOR_MAX_BURST_SIZE		(MSM_ROTATOR_BASE+0x0050)
 #define MSM_ROTATOR_HW_VERSION			(MSM_ROTATOR_BASE+0x0070)
+#define MSM_ROTATOR_SW_RESET			(MSM_ROTATOR_BASE+0x0074)
 #define MSM_ROTATOR_SRC_SIZE			(MSM_ROTATOR_BASE+0x1108)
 #define MSM_ROTATOR_SRCP0_ADDR			(MSM_ROTATOR_BASE+0x110c)
 #define MSM_ROTATOR_SRCP1_ADDR			(MSM_ROTATOR_BASE+0x1110)
@@ -345,6 +346,8 @@ static int get_bpp(int format)
 		return 1;
 
 	case MDP_RGB_888:
+	case MDP_YCBCR_H1V1:
+	case MDP_YCRCB_H1V1:
 		return 3;
 
 	case MDP_YCRYCB_H2V1:
@@ -391,6 +394,8 @@ static int msm_rotator_get_plane_sizes(uint32_t format,	uint32_t w, uint32_t h,
 	case MDP_RGB_565:
 	case MDP_BGR_565:
 	case MDP_YCRYCB_H2V1:
+	case MDP_YCBCR_H1V1:
+	case MDP_YCRCB_H1V1:
 		p->num_planes = 1;
 		p->plane_size[0] = w * h * get_bpp(format);
 		break;
@@ -739,6 +744,8 @@ static int msm_rotator_rgb_types(struct msm_rotator_img_info *info,
 			break;
 
 		case MDP_RGB_888:
+		case MDP_YCBCR_H1V1:
+		case MDP_YCRCB_H1V1:
 			iowrite32(GET_PACK_PATTERN(0, CLR_R, CLR_G, CLR_B, 8),
 				  MSM_ROTATOR_SRC_UNPACK_PATTERN1);
 			iowrite32(GET_PACK_PATTERN(0, CLR_R, CLR_G, CLR_B, 8),
@@ -900,8 +907,7 @@ static int msm_rotator_do_rotate(unsigned long arg)
 			break;
 
 	if (s == MAX_SESSIONS) {
-		dev_dbg(msm_rotator_dev->device,
-			"%s() : Attempt to use invalid session_id %d\n",
+		pr_err("%s() : Attempt to use invalid session_id %d\n",
 			__func__, s);
 		rc = -EINVAL;
 		goto do_rotate_unlock_mutex;
@@ -1083,6 +1089,8 @@ static int msm_rotator_do_rotate(unsigned long arg)
 	case MDP_XRGB_8888:
 	case MDP_BGRA_8888:
 	case MDP_RGBX_8888:
+	case MDP_YCBCR_H1V1:
+	case MDP_YCRCB_H1V1:
 		rc = msm_rotator_rgb_types(msm_rotator_dev->img_info[s],
 					   in_paddr, out_paddr,
 					   use_imem,
@@ -1121,11 +1129,13 @@ static int msm_rotator_do_rotate(unsigned long arg)
 		break;
 	default:
 		rc = -EINVAL;
+		pr_err("%s(): Unsupported format %u\n", __func__, format);
 		goto do_rotate_exit;
 	}
 
 	if (rc != 0) {
 		msm_rotator_dev->last_session_idx = INVALID_SESSION;
+		pr_err("%s(): Invalid session error\n", __func__);
 		goto do_rotate_exit;
 	}
 
@@ -1137,8 +1147,11 @@ static int msm_rotator_do_rotate(unsigned long arg)
 	wait_event(msm_rotator_dev->wq,
 		   (msm_rotator_dev->processing == 0));
 	status = (unsigned char)ioread32(MSM_ROTATOR_INTR_STATUS);
-	if ((status & 0x03) != 0x01)
+	if ((status & 0x03) != 0x01) {
+		pr_err("%s(): AXI Bus Error, issuing SW_RESET\n", __func__);
+		iowrite32(0x1, MSM_ROTATOR_SW_RESET);
 		rc = -EFAULT;
+	}
 	iowrite32(0, MSM_ROTATOR_INTR_ENABLE);
 	iowrite32(3, MSM_ROTATOR_INTR_CLEAR);
 
@@ -1238,6 +1251,8 @@ static int msm_rotator_start(unsigned long arg,
 	case MDP_Y_CRCB_H2V2:
 	case MDP_Y_CBCR_H2V1:
 	case MDP_Y_CRCB_H2V1:
+	case MDP_YCBCR_H1V1:
+	case MDP_YCRCB_H1V1:
 		info.dst.format = info.src.format;
 		break;
 	case MDP_YCRYCB_H2V1:
@@ -1295,14 +1310,14 @@ static int msm_rotator_start(unsigned long arg,
 			msm_rotator_dev->img_info[first_free_index];
 		*(msm_rotator_dev->img_info[first_free_index]) = info;
 		msm_rotator_dev->fd_info[first_free_index] = fd_info;
-
-		if (copy_to_user((void __user *)arg, &info, sizeof(info)))
-			rc = -EFAULT;
 	} else if (s == MAX_SESSIONS) {
 		dev_dbg(msm_rotator_dev->device, "%s: all sessions in use\n",
 			__func__);
 		rc = -EBUSY;
 	}
+
+	if (rc == 0 && copy_to_user((void __user *)arg, &info, sizeof(info)))
+		rc = -EFAULT;
 
 rotator_start_exit:
 	mutex_unlock(&msm_rotator_dev->rotator_lock);
